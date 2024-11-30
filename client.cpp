@@ -9,34 +9,29 @@
 
 using namespace std;
 
-int main(int argc, char *argv[])
-{
+int main(){
     struct sockaddr_in sa;
-    int SocketFD;
-    int port = 1100; // atoi(argv[2]);
+    memset(&sa, 0, sizeof sa);
+    int port = 1100;
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(port);
+    sa.sin_addr.s_addr = inet_addr("127.0.0.1");
     cout << "addr: " << "127.0.0.1" << endl;
     cout << "port: " << port << endl;
     
-    SocketFD = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    int SocketFD = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (SocketFD == -1) {
         perror("cannot create socket");
         exit(EXIT_FAILURE);
     }
 
-    memset(&sa, 0, sizeof sa);
-
     char login[256] ;
     char password[256] ;
-
-    sa.sin_addr.s_addr = inet_addr("127.0.0.1");//argv[1]);
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(port);
 
     cout << "Podaj login: " << endl;
     cin>>login;
     cout << "Podaj hasło: " << endl;
-    cin>>password;// fgets(password, sizeof password, stdin);
-    
+    cin>>password;
 
     if (connect(SocketFD, (struct sockaddr *)&sa, sizeof sa) == -1) {
         perror("connect failed");
@@ -69,9 +64,10 @@ int main(int argc, char *argv[])
         memset(buff, 0, sizeof(buff));
         bzero(buff,256);
         cout << "Enter message: ";
-        cin >> buff;
+        cin.ignore(); 
+        cin.getline(buff, sizeof(buff)); 
 
-        if (strcmp(buff, "exit") == 0) {
+        if (strcmp(buff, "exit\n") == 0) {
             break;
         }
 
@@ -81,7 +77,8 @@ int main(int argc, char *argv[])
         }
 
         memset(buff_rcv, 0, sizeof(buff_rcv));
-        if (read(SocketFD, buff_rcv, sizeof(buff_rcv)) <= 0) {
+        bzero(buff_rcv,256);
+        if (read(SocketFD, buff_rcv, sizeof buff_rcv ) <= 0) {
             perror("Error receiving response");
             break;
         }
