@@ -5,62 +5,73 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <thread>
-#include <vector>
-#include <string>
 
-constexpr int PORT = 1100;
+constexpr int PORT = 1101;
 constexpr int BUFFER_SIZE = 1024;
 
-void handleIncomingConnections(int server_socket) {
+void handleIncomingMessages(int server_socket) {
     while (true) {
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
-        int client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_len);
+        char buffer[BUFFER_SIZE] = {0};
 
-        if (client_socket < 0) {
-            std::cerr << "Error accepting connection" << std::endl;
+        int bytes_received = recvfrom(
+            server_socket,
+            buffer,
+            BUFFER_SIZE,
+            0,
+            (struct sockaddr *)&client_addr,
+            &client_len
+        );
+
+        if (bytes_received < 0) {
+            std::cerr << "Error receiving message" << std::endl;
             continue;
         }
 
-        char buffer[BUFFER_SIZE] = {0};
-        recv(client_socket, buffer, BUFFER_SIZE, 0);
-        std::cout << "Message received: " << buffer << std::endl;
-
-        close(client_socket);
+        std::string client_ip = inet_ntoa(client_addr.sin_addr);
+        std::cout << "Message received from " << client_ip << ": " << buffer << std::endl;
     }
 }
 
-void connectToOtherServers(const std::vector<std::string>& ips) {
-    for (const auto& ip : ips) {
-        int client_socket = socket(AF_INET, SOCK_STREAM, 0);
-        if (client_socket < 0) {
-            std::cerr << "Error creating socket for " << ip << std::endl;
-            continue;
-        }
-
-        struct sockaddr_in server_addr;
-        memset(&server_addr, 0, sizeof(server_addr));
-        server_addr.sin_family = AF_INET;
-        server_addr.sin_port = htons(PORT);
-
-        if (inet_pton(AF_INET, ip.c_str(), &server_addr.sin_addr) <= 0) {
-            std::cerr << "Invalid IP address: " << ip << std::endl;
-            close(client_socket);
-            continue;
-        }
-
-        if (connect(client_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-            std::cerr << "Could not connect to " << ip << std::endl;
-            close(client_socket);
-            continue;
-        }
-
-        const char* message = "poloczono";
-        send(client_socket, message, strlen(message), 0);
-        std::cout << "Connected and sent message to " << ip << std::endl;
-
-        close(client_socket);
+void sendBroadcastMessage() {
+    int client_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (client_socket < 0) {
+        std::cerr << "Error creating UDP socket" << std::endl;
+        return;
     }
+
+    // Ustawienie opcji na wysyłanie broadcastu
+    int broadcast_enable = 1;
+    if (setsockopt(client_socket, SOL_SOCKET, SO_BROADCAST, &broadcast_enable, sizeof(broadcast_enable)) < 0) {
+        std::cerr << "Error setting socket options for broadcast" << std::endl;
+        close(client_socket);
+        return;
+    }
+
+    struct sockaddr_in broadcast_addr;
+    memset(&broadcast_addr, 0, sizeof(broadcast_addr));
+    broadcast_addr.sin_family = AF_INET;
+    broadcast_addr.sin_port = htons(PORT);
+    broadcast_addr.sin_addr.s_addr = inet_addr("192.168.0.255"); // Adres broadcast w Twojej sieci
+
+    const char *message = "Broadcast message from server";
+    int bytes_sent = sendto(
+        client_socket,
+        message,
+        strlen(message),
+        0,
+        (struct sockaddr *)&broadcast_addr,
+        sizeof(broadcast_addr)
+    );
+
+    if (bytes_sent < 0) {
+        std::cerr << "Error sending broadcast message" << std::endl;
+    } else {
+        std::cout << "Broadcast message sent" << std::endl;
+    }
+
+    close(client_socket);
 }
 
 int main() {
@@ -70,37 +81,25 @@ int main() {
     server_addr.sin_port = htons(PORT);
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    std::cout << "addr: " << INADDR_ANY << std::endl;
-    std::cout << "port: " << PORT << std::endl;
-
-    int server_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_socket == -1) {
-        std::cerr << "Error creating socket\n";
+    int server_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (server_socket < 0) {
+        std::cerr << "Error creating UDP socket\n";
         return 1;
     }
 
     if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        std::cerr << "Error binding socket\n";
+        std::cerr << "Error binding UDP socket\n";
         close(server_socket);
         return 1;
     }
 
-    if (listen(server_socket, 5) < 0) {
-        std::cerr << "Error listening on socket\n";
-        close(server_socket);
-        return 1;
-    }
+    std::cout << "Server is running and waiting for messages on port " << PORT << "..." << std::endl;
 
-    std::cout << "Server is running and waiting for connections..." << std::endl;
+    // Wątek obsługujący przychodzące wiadomości
+    std::thread incomingThread(handleIncomingMessages, server_socket);
 
-    // List of IPs in the network (for demo purposes, update with your logic to discover IPs)
-    std::vector<std::string> ips = {"10.0.2.15"};
-
-    // Start a thread to handle incoming connections
-    std::thread incomingThread(handleIncomingConnections, server_socket);
-
-    // Connect to other servers in the network
-    connectToOtherServers(ips);
+    // Wysyłanie wiadomości broadcastowych
+    sendBroadcastMessage();
 
     incomingThread.join();
     close(server_socket);

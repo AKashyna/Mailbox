@@ -2,7 +2,9 @@
 #define DATABASE_H
 
 #include <string>
+#include <cstring>
 #include <vector>
+#include <tuple>
 
 using namespace std;
 

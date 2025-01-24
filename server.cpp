@@ -9,9 +9,13 @@
 #include <fcntl.h> 
 #include <unistd.h>
 #include <pthread.h>
+#include <vector>
+#include <tuple>
+#include <string>
 #include "Database.h"
 
-const vector<string> ips = {"10.0.2.15"};
+
+const vector<string> ips = {"150.254.32.78"};
 using namespace std;
 
 void connectToOtherServers(string option, string sender, string receiver, string other, string subject) {
@@ -53,6 +57,7 @@ void connectToOtherServers(string option, string sender, string receiver, string
             //TODO
             cout << "Synhronized with " << ip << endl;
         }else if(option == "New User"){
+            cout << "Sending New User information" << endl;
             usleep(100000);
             if (write(client_socket, option.c_str(), option.length()) <= 0) {
                 perror("Error sending option");
@@ -69,6 +74,9 @@ void connectToOtherServers(string option, string sender, string receiver, string
                 close(client_socket);
             }
         }else if(option == "New Message"){
+            char answer[256];
+            memset(answer, 0, 256);
+            cout << "Trying to send new message..." << endl;
             usleep(100000);
             if (write(client_socket, option.c_str(), option.length()) <= 0) {
                 perror("Error sending option");
@@ -84,15 +92,24 @@ void connectToOtherServers(string option, string sender, string receiver, string
                 perror("Error sending receiver");
                 close(client_socket);
             }
-            usleep(100000);
-            if (write(client_socket, subject.c_str(), subject.length()) <= 0) {
-                perror("Error sending subject");
+            if (read(client_socket, answer, 256) <= 0) {
+                cerr << "Error reading password\n";
                 close(client_socket);
+                pthread_exit(NULL);
             }
-            usleep(100000);
-            if (write(client_socket, other.c_str(), other.length()) <= 0) {
-                perror("Error sending content");
-                close(client_socket);
+            cout << "Information from other server, Klient is: " << answer << endl;
+            if(strcmp(answer, "Avalible") == 0){
+                usleep(100000);
+                if (write(client_socket, subject.c_str(), subject.length()) <= 0) {
+                    perror("Error sending subject");
+                    close(client_socket);
+                }
+                usleep(100000);
+                if (write(client_socket, other.c_str(), other.length()) <= 0) {
+                    perror("Error sending content");
+                    close(client_socket);
+                }
+                cout << "Message send" << endl;
             }
         }
         close(client_socket);
@@ -150,7 +167,7 @@ void clients(int newSocket){
     if (write(newSocket, "Accept", 7) < 0){
         perror("Error writing to socket");
     }
-
+    cout << "Usser Accepted" << endl;
     while(true){
         char action[256];
         memset(action, 0, sizeof(action));
@@ -159,10 +176,12 @@ void clients(int newSocket){
             break;
         }
 
-        if(strcmp(action, "getMessages") == 0){
+        if (strcmp(action, "getMessages") == 0) {
             // Wysylanie aktualnie dostepnych wiadomosci
             vector<tuple<string, string>> topics = getTopics(login); 
-            for (const auto& [sender, topic] : topics) {
+            for (const auto& pom : topics) {
+                string sender = std::get<0>(pom);
+                string topic = std::get<1>(pom);
                 string mess = sender + ":" + topic;
                 cout << "message to  client: \n" << mess << endl;
                 if (write(newSocket, mess.c_str(), mess.length()) <= 0)
@@ -262,26 +281,40 @@ void servers(int newSocket){
             close(newSocket);
             pthread_exit(NULL);
         }
+        cout << "Received sender: " << sender << endl;
         // Odbiór odbiorcy
         if (read(newSocket, receiver, 256) <= 0) {
             cerr << "Error reading password\n";
             close(newSocket);
             pthread_exit(NULL);
         }
-        // Odbiór tematu
-        if (read(newSocket, subject, 256) <= 0) {
-            cerr << "Error reading subject\n";
+        cout << "Received receiver: " << receiver << endl;
+        if(czyIstniejeUzytkownik(receiver)){//sprawdzanie czy server posiada takiego uzytkownika
+            if (write(newSocket, "Avalible", 9) <= 0) {
+            perror("Error sending sender");
             close(newSocket);
-            pthread_exit(NULL);
-        }
-        // Odbiór tresci
-        if (read(newSocket, content, 1000) <= 0) {
-            cerr << "Error reading content\n";
+            }
+            // Odbiór tematu
+            if (read(newSocket, subject, 256) <= 0) {
+                cerr << "Error reading subject\n";
+                close(newSocket);
+                pthread_exit(NULL);
+            }
+            // Odbiór tresci
+            if (read(newSocket, content, 1000) <= 0) {
+                cerr << "Error reading content\n";
+                close(newSocket);
+                pthread_exit(NULL);
+            }
+            addMessage(sender, receiver, subject, content);
+            cout << "Added new message from other server" << endl;
+        }else {
+            if (write(newSocket, "Unknown", 8) <= 0) {
+            perror("Error sending sender");
             close(newSocket);
-            pthread_exit(NULL);
+            }
+            cout << "Unknown user" << endl;
         }
-        addMessage(sender, receiver, subject, content);
-        cout << "Added new message from other server" << endl;
     }
 }
 

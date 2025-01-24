@@ -1,6 +1,9 @@
 #include <iostream>
 #include <sqlite3.h>
 #include <vector>
+#include <tuple>
+#include <string>
+#include <cstring>
 #include "Database.h"
 
 using namespace std;
